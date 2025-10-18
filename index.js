@@ -9,10 +9,10 @@ const port = process.env.PORT || 3000;
 
 const tempCodes = new Map();
 
-async function findOrCreateUser(userId, email) {
-  let user = await User.findById(userId);
+async function findOrCreateUser(id, name, lastName, email, profilePic) {
+  let user = await User.findById(id);
   if (!user) {
-    user = new User({ _id: userId, email, status: false, friends: [] });
+    user = new User({ _id: id, name, lastName, email, profilePic, status: false, friends: [] });
     await user.save();
   }
   return user;
@@ -65,8 +65,38 @@ async function startServer() {
       }
     });
 
+    app.get("/getfriends/:id", async (req, res) => {
+      try {
+        const getfriends = await User.findById(req.params.id).select("-_id friends");
+        if (!getfriends) return res.status(404).json({ message: "User not find." });
+        res.json(getfriends);
+      } catch (error) {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    app.post("/create_user", async (req, res) => {
+      try {
+        const { id, name, lastName, email, picURL } = req.body;
+        await findOrCreateUser(id, name, lastName, email, picURL);
+        res.json({ success: true, message: "User created" });
+      } catch (e) {
+        res.status(500).json({ success: false, message: "Server error" });
+      }
+    })
+
+    app.get("/get_user/:id", async (req, res) => {
+      try {
+        const getUser = await User.findById(req.params.id);
+        if (!getUser) return res.status(404).json({ message: "User not find." });
+        res.json(getUser);
+      } catch (e) {
+        res.status(500).json({ success: false, message: "Server error" })
+      }
+    })
+
     app.listen(port, () => {
-      console.log(`Server çalışıyor → http://localhost:${port}`);
+      console.log(`Server running → http://localhost:${port}`);
     });
 
   } catch (err) {
