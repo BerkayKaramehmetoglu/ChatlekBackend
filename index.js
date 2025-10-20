@@ -78,8 +78,23 @@ async function startServer() {
     app.post("/create_user", async (req, res) => {
       try {
         const { id, name, lastName, email, picURL } = req.body;
+        if (!name || !lastName) {
+          return res.status(404).json({ success: false, message: "Name & Last Name can't be empty." });
+        }
         await findOrCreateUser(id, name, lastName, email, picURL);
         res.json({ success: true, message: "User created" });
+      } catch (e) {
+        res.status(500).json({ success: false, message: "Server error" });
+      }
+    })
+
+    app.post("/update_user", async (req, res) => {
+      try {
+        const { id, name, lastName, picURL } = req.body
+        const filter = { _id: id };
+        const update = { name: name, lastName: lastName, profilePic: picURL };
+        await User.findOneAndUpdate(filter, update);
+        res.json({ success: true, message: "User updated." });
       } catch (e) {
         res.status(500).json({ success: false, message: "Server error" });
       }
