@@ -24,10 +24,8 @@ async function startServer() {
 
     app.post('/friends/create', async (req, res) => {
       try {
-        const { code, userId, email } = req.body;
-        await findOrCreateUser(userId, email);
-        tempCodes.set(code, { userId, email, code });
-
+        const { code, id } = req.body;
+        tempCodes.set(code, { id, code });
         res.json({ success: true, message: "The code completed successfully." });
       } catch (err) {
         console.error(err);
@@ -37,24 +35,24 @@ async function startServer() {
 
     app.post('/friends/use', async (req, res) => {
       try {
-        const { code, userId, email } = req.body;
-        await findOrCreateUser(userId, email);
-
+        const { code, id } = req.body;
         const codeData = tempCodes.get(code);
+        console.log(codeData)
+
         if (!codeData)
           return res.status(404).json({ success: false, message: "There is no such Friends Code." });
 
-        const { userId: friendId } = codeData;
-        if (userId === friendId)
+        const { id: friendId } = codeData;
+        if (id === friendId)
           return res.status(400).json({ success: false, message: "You cannot add yourself." });
 
-        const user = await User.findById(userId);
+        const user = await User.findById(id);
         if (user.friends.includes(friendId))
           return res.status(400).json({ success: false, message: "You are already friends." });
 
         await Promise.all([
-          User.updateOne({ _id: userId }, { $addToSet: { friends: friendId } }),
-          User.updateOne({ _id: friendId }, { $addToSet: { friends: userId } })
+          User.updateOne({ _id: id }, { $addToSet: { friends: friendId } }),
+          User.updateOne({ _id: friendId }, { $addToSet: { friends: id } })
         ]);
 
         tempCodes.delete(code);
@@ -65,11 +63,12 @@ async function startServer() {
       }
     });
 
-    app.get("/getfriends/:id", async (req, res) => {
+    app.get("/get_friends/:id", async (req, res) => {
       try {
         const getfriends = await User.findById(req.params.id).select("-_id friends");
         if (!getfriends) return res.status(404).json({ message: "User not find." });
-        res.json(getfriends);
+        const friends = await User.find({ _id: { $in: getfriends.friends } }).select(" -_id -friends");
+        res.json(friends);
       } catch (error) {
         res.status(500).json({ message: "Server error" });
       }
