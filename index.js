@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const User = require("./schemas");
+const WebSocket = require("ws");
 
 const app = express();
 app.use(express.json());
@@ -118,5 +119,37 @@ async function startServer() {
     process.exit(1);
   }
 }
+
+const wss = new WebSocket.Server({ port: 8080 });
+console.log("WebSocket server is running on ws://localhost:8080");
+let clients = [];
+
+wss.on("connection", (ws) => {
+  console.log("🔗 Yeni client bağlandı");
+  clients.push(ws);
+
+  ws.on("message", (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+      console.log("Alındı:", msg);
+
+      clients.forEach((client) => {
+        if (client !== ws && client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({
+            id: msg.id,
+            message: msg.message
+          }));
+        }
+      });
+    } catch (err) {
+      console.error("JSON parse hatası:", err);
+    }
+  });
+
+  ws.on("close", () => {
+    console.log("Client ayrıldı");
+    clients = clients.filter((c) => c !== ws);
+  });
+});
 
 startServer();
