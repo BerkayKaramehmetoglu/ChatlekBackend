@@ -1,22 +1,40 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
-const User = require("./schemas");
+const Schema = require("./schemas");
 const WebSocket = require("ws");
+const wss = new WebSocket.Server({ port: 8080 });
 
 const app = express();
 app.use(express.json());
 const port = process.env.PORT || 3000;
 
 const tempCodes = new Map();
+console.log("WebSocket server is running on ws://localhost:8080");
+let clients = [];
 
 async function findOrCreateUser(id, name, lastName, email, profilePic) {
-  let user = await User.findById(id);
+  let user = await Schema.findById(id);
   if (!user) {
-    user = new User({ _id: id, name, lastName, email, profilePic, status: false, friends: [] });
+    user = new Schema({ _id: id, name, lastName, email, profilePic, status: false, friends: [] });
     await user.save();
   }
   return user;
+}
+
+async function findOrCreateChat(senderId, receiverId, text) {
+  let chat = await Schema.findOne({
+    members: { $all: [senderId, receiverId] }
+  });
+
+  if (!chat) {
+    chat = new Schema({
+      members: [senderId, receiverId],
+      lastMessage: { text: text, senderId: senderId }
+    });
+    await chat.save();
+  }
+  return chat;
 }
 
 async function startServer() {
@@ -110,6 +128,26 @@ async function startServer() {
       }
     })
 
+    app.post("/create_chat", async (req, res) => {
+      try {
+        const { senderId, receiverId, text } = req.body;
+        await findOrCreateChat(senderId, receiverId, text);
+        res.json({ success: true, message: "Chat created" });
+      } catch (e) {
+        res.status(500).json({ success: false, message: "Server error." })
+      }
+    });
+
+    app.get("/get_chat", async (req, res) => {
+      try {
+        const { senderId, receiverId } = req.body;
+        const chat = await findOrCreateChat(senderId, receiverId);
+        res.json({ chat });
+      } catch (e) {
+        res.status(500).json({ success: false, message: "Server error." })
+      }
+    })
+
     app.listen(port, () => {
       console.log(`Server running → http://localhost:${port}`);
     });
@@ -119,10 +157,6 @@ async function startServer() {
     process.exit(1);
   }
 }
-
-const wss = new WebSocket.Server({ port: 8080 });
-console.log("WebSocket server is running on ws://localhost:8080");
-let clients = [];
 
 wss.on("connection", (ws) => {
   console.log("🔗 Yeni client bağlandı");

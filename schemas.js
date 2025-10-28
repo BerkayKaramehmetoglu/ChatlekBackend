@@ -10,4 +10,10 @@ const userSchema = new mongoose.Schema({
     friends: { type: [String], default: [] }
 });
 
+const chatSchema = new mongoose.Schema({
+    members: { type: [String], default: [] },
+    lastMessage: { text: { type: String, }, senderId: { type: String, }, },
+})
+
 module.exports = mongoose.model("User", userSchema);
+module.exports = mongoose.model("Chat", chatSchema);
