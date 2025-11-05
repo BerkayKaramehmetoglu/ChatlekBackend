@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
-const Schema = require("./schemas");
+const { User, Chat } = require("./schemas");
 const WebSocket = require("ws");
 const wss = new WebSocket.Server({ port: 8080 });
 
@@ -14,24 +14,33 @@ console.log("WebSocket server is running on ws://localhost:8080");
 let clients = [];
 
 async function findOrCreateUser(id, name, lastName, email, profilePic) {
-  let user = await Schema.findById(id);
+  let user = await User.findById(id);
   if (!user) {
-    user = new Schema({ _id: id, name, lastName, email, profilePic, status: false, friends: [] });
+    user = new User({ _id: id, name, lastName, email, profilePic, status: false, friends: [] });
     await user.save();
   }
   return user;
 }
 
-async function findOrCreateChat(senderId, receiverId, text) {
-  let chat = await Schema.findOne({
+async function findOrCreateChat(senderId, receiverId, lastMessage) {
+  let chat = await Chat.findOne({
     members: { $all: [senderId, receiverId] }
   });
 
   if (!chat) {
-    chat = new Schema({
+    chat = new Chat({
       members: [senderId, receiverId],
-      lastMessage: { text: text, senderId: senderId }
+      lastMessage: {
+        text: lastMessage,
+        senderId: senderId,
+      }
     });
+    await chat.save();
+  } else if (lastMessage) {
+    chat.lastMessage = {
+      lastMessage: lastMessage,
+      senderId: senderId,
+    };
     await chat.save();
   }
   return chat;
@@ -86,10 +95,10 @@ async function startServer() {
       try {
         const getfriends = await User.findById(req.params.id).select("-_id friends");
         if (!getfriends) return res.status(404).json({ message: "User not find." });
-        const friends = await User.find({ _id: { $in: getfriends.friends } }).select(" -_id -friends");
+        const friends = await User.find({ _id: { $in: getfriends.friends } }).select(" _id -friends");
         res.json(friends);
       } catch (error) {
-        res.status(500).json({ message: "Server error" });
+        res.status(500).json({ success: false, message: "Server error" });
       }
     });
 
@@ -130,8 +139,8 @@ async function startServer() {
 
     app.post("/create_chat", async (req, res) => {
       try {
-        const { senderId, receiverId, text } = req.body;
-        await findOrCreateChat(senderId, receiverId, text);
+        const { senderId, receiverId, lastMessage } = req.body;
+        await findOrCreateChat(senderId, receiverId, lastMessage);
         res.json({ success: true, message: "Chat created" });
       } catch (e) {
         res.status(500).json({ success: false, message: "Server error." })
@@ -140,13 +149,23 @@ async function startServer() {
 
     app.get("/get_chat", async (req, res) => {
       try {
-        const { senderId, receiverId } = req.body;
+        const { senderId, receiverId } = req.query;
         const chat = await findOrCreateChat(senderId, receiverId);
-        res.json({ chat });
+        res.json(chat);
       } catch (e) {
         res.status(500).json({ success: false, message: "Server error." })
       }
     })
+
+    app.put("/update_chat", async (req, res) => {
+      try {
+        const { senderId, receiverId, lastMessage } = req.body;
+        const chat = await findOrCreateChat(senderId, receiverId, lastMessage);
+        res.json(chat);
+      } catch (e) {
+        res.status(500).json({ success: false, message: "Server error." });
+      }
+    });
 
     app.listen(port, () => {
       console.log(`Server running → http://localhost:${port}`);

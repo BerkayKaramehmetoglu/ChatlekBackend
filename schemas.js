@@ -12,8 +12,10 @@ const userSchema = new mongoose.Schema({
 
 const chatSchema = new mongoose.Schema({
     members: { type: [String], default: [] },
-    lastMessage: { text: { type: String, }, senderId: { type: String, }, },
+    lastMessage: { lastMessage: { type: String, }, senderId: { type: String, }, },
 })
 
-module.exports = mongoose.model("User", userSchema);
-module.exports = mongoose.model("Chat", chatSchema);
+const User = mongoose.model("User", userSchema);
+const Chat = mongoose.model("Chat", chatSchema);
+
+module.exports = { User, Chat };
