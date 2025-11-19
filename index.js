@@ -22,28 +22,12 @@ async function findOrCreateUser(id, name, lastName, email, profilePic) {
   return user;
 }
 
-async function findOrCreateChat(senderId, receiverId, lastMessage) {
-  let chat = await Chat.findOne({
-    members: { $all: [senderId, receiverId] }
-  });
-
-  if (!chat) {
-    chat = new Chat({
-      members: [senderId, receiverId],
-      lastMessage: {
-        text: lastMessage,
-        senderId: senderId,
-      }
-    });
-    await chat.save();
-  } else if (lastMessage) {
-    chat.lastMessage = {
-      lastMessage: lastMessage,
-      senderId: senderId,
-    };
-    await chat.save();
+async function updateUserStatus(userId, status) {
+  try {
+    await User.updateOne({ _id: userId }, { $set: { status } });
+  } catch (error) {
+    console.error(`Kullanıcı durumu güncellenemedi (${userId}):`, error);
   }
-  return chat;
 }
 
 async function startServer() {
@@ -65,7 +49,6 @@ async function startServer() {
       try {
         const { code, id } = req.body;
         const codeData = tempCodes.get(code);
-        console.log(codeData)
 
         if (!codeData)
           return res.status(404).json({ success: false, message: "There is no such Friends Code." });
@@ -94,7 +77,7 @@ async function startServer() {
     app.get("/get_friends/:id", async (req, res) => {
       try {
         const getfriends = await User.findById(req.params.id).select("-_id friends");
-        if (!getfriends) return res.status(404).json({ message: "User not find." });
+        if (!getfriends) return res.status(404).json([]);
         const friends = await User.find({ _id: { $in: getfriends.friends } }).select(" _id -friends");
         res.json(friends);
       } catch (error) {
@@ -130,7 +113,7 @@ async function startServer() {
     app.get("/get_user/:id", async (req, res) => {
       try {
         const getUser = await User.findById(req.params.id);
-        if (!getUser) return res.status(404).json({ message: "User not find." });
+        if (!getUser) return res.status(404).json({ success: false, message: "User not find." });
         res.json(getUser);
       } catch (e) {
         res.status(500).json({ success: false, message: "Server error" })
@@ -139,30 +122,75 @@ async function startServer() {
 
     app.post("/create_chat", async (req, res) => {
       try {
-        const { senderId, receiverId, lastMessage } = req.body;
-        await findOrCreateChat(senderId, receiverId, lastMessage);
-        res.json({ success: true, message: "Chat created" });
+        const { senderId, receiverId } = req.body;
+
+        let chat = await Chat.findOne({
+          members: { $all: [senderId, receiverId] }
+        });
+
+        if (chat)
+          return res.json({success: true, message: "Chat Created"});
+
+        chat = new Chat({
+          members: [senderId, receiverId],
+          lastMessage: { lastMessage: "", senderId: "" }
+        });
+
+        await chat.save();
+
+        res.json(chat);
+
       } catch (e) {
-        res.status(500).json({ success: false, message: "Server error." })
+        res.status(500).json({ success: false, message: "Server error." });
       }
     });
 
     app.get("/get_chat", async (req, res) => {
       try {
         const { senderId, receiverId } = req.query;
-        const chat = await findOrCreateChat(senderId, receiverId);
+
+        const chat = await Chat.findOne({
+          members: { $all: [senderId, receiverId] }
+        });
+
+        if (!chat) {
+          return res.json({
+            members: [],
+            lastMessage: {
+              lastMessage: "",
+              senderId: ""
+            }
+          });
+        }
+
         res.json(chat);
+
       } catch (e) {
-        res.status(500).json({ success: false, message: "Server error." })
+        res.status(500).json({ success: false, message: "Server error." });
       }
-    })
+    });
 
     app.put("/update_chat", async (req, res) => {
       try {
         const { senderId, receiverId, lastMessage } = req.body;
-        const chat = await findOrCreateChat(senderId, receiverId, lastMessage);
+
+        const chat = await Chat.findOne({
+          members: { $all: [senderId, receiverId] }
+        });
+
+        if (!chat)
+          return res.status(404).json({ success: false, message: "Chat not found" });
+
+        chat.lastMessage = {
+          lastMessage,
+          senderId
+        };
+
+        await chat.save();
         res.json(chat);
+
       } catch (e) {
+        console.log(e);
         res.status(500).json({ success: false, message: "Server error." });
       }
     });
@@ -178,30 +206,35 @@ async function startServer() {
 }
 
 wss.on("connection", (ws) => {
-  console.log("🔗 Yeni client bağlandı");
-  clients.push(ws);
+  const clientInfo = { id: null, ws };
+  clients.push(clientInfo);
 
-  ws.on("message", (data) => {
+  ws.on("message", async (data) => {
     try {
       const msg = JSON.parse(data.toString());
-      console.log("Alındı:", msg);
 
+      if (!clientInfo.id) {
+        clientInfo.id = msg.id;
+        await updateUserStatus(msg.id, true);
+      }
       clients.forEach((client) => {
-        if (client !== ws && client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify({
+        if (client.ws !== ws && client.ws.readyState === WebSocket.OPEN) {
+          client.ws.send(JSON.stringify({
             id: msg.id,
             message: msg.message
           }));
         }
       });
     } catch (err) {
-      console.error("JSON parse hatası:", err);
+      console.error("JSON parse error:", err);
     }
   });
 
-  ws.on("close", () => {
-    console.log("Client ayrıldı");
-    clients = clients.filter((c) => c !== ws);
+  ws.on("close", async () => {
+    if (clientInfo.id) {
+      await updateUserStatus(clientInfo.id, false);
+    }
+    clients = clients.filter((c) => c.ws !== ws);
   });
 });
 
